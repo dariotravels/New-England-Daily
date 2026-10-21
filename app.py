@@ -1,4 +1,5 @@
 import io, re, html, datetime
+import fitz
 from urllib.parse import quote
 import requests, feedparser, streamlit as st
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle, KeepTogether
@@ -80,7 +81,10 @@ def create_pdf(news,obits,forecast,errors):
  flow.extend([Spacer(1,24),p('Stories are headlines with source links, not full reproduced articles. Obituary results may be incomplete.','BodyCustom')])
  if errors:flow.append(p('Some sources were temporarily unavailable: '+', '.join(errors),'BodyCustom'))
  doc.build(flow,onFirstPage=header,onLaterPages=header);buf.seek(0);return buf.getvalue()
-st.info('Press the button for a fresh edition. News and obituary results depend on publicly available sources and may occasionally be incomplete.')
+st.info('Press Generate Newspaper to read the latest edition right here. You can still download or print it.')
+if 'edition_pdf' not in st.session_state:
+ st.session_state.edition_pdf = None
+ st.session_state.edition_errors = []
 if st.button('🗞️ Generate Newspaper',type='primary',use_container_width=True):
  news={};errors=[]
  with st.spinner('Gathering current headlines, obituary links, and weather...'):
@@ -90,9 +94,19 @@ if st.button('🗞️ Generate Newspaper',type='primary',use_container_width=Tru
   try:obits=fetch_news('site:obituaries.eagletribune.com/obituary/ Eagle-Tribune',n=10,days=14)
   except Exception:obits=[];errors.append('Obituaries')
   forecast=fetch_weather()
-  pdf=create_pdf(news,obits,forecast,errors)
- st.success('Your newspaper is ready!')
- st.download_button('⬇️ Download / Print PDF',pdf,file_name='New_England_Daily_'+datetime.date.today().isoformat()+'.pdf',mime='application/pdf',use_container_width=True)
- if errors:st.warning('Some sources could not be reached: '+', '.join(errors))
+  st.session_state.edition_pdf=create_pdf(news,obits,forecast,errors)
+  st.session_state.edition_errors=errors
+if st.session_state.edition_pdf:
+ st.success('Your newspaper is ready! Read it below.')
+ st.download_button('⬇️ Save or Print PDF',st.session_state.edition_pdf,file_name='New_England_Daily_'+datetime.date.today().isoformat()+'.pdf',mime='application/pdf',use_container_width=True)
+ if st.session_state.edition_errors:
+  st.warning('Some sources could not be reached: '+', '.join(st.session_state.edition_errors))
+ st.markdown('### Read today’s newspaper')
+ with fitz.open(stream=st.session_state.edition_pdf,filetype='pdf') as document:
+  for i,page in enumerate(document):
+   st.caption(f'Page {i+1} of {len(document)}')
+   pix=page.get_pixmap(matrix=fitz.Matrix(1.5,1.5),alpha=False)
+   st.image(pix.tobytes('png'),use_container_width=True)
+ st.caption('To tap article links, open the downloaded PDF. The preview pages are images for reliable viewing on iPad and iPhone.')
  st.markdown('**Obituaries:** [Read the latest directly from The Eagle-Tribune]('+OBIT_URL+')')
  st.caption('For personal use. Headlines and links are attributed to their publishers. Weather forecasts can change.')
